@@ -37,6 +37,18 @@ android {
 }
 
 dependencies {
+
+    // Actividad 2 - Navegación
+    implementation(libs.androidx.navigation.compose)
+
+    // Actividad 2 - ViewModel y StateFlow
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
+    // Actividad 2 - Operaciones asincrónicas
+    implementation(libs.kotlinx.coroutines.android)
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

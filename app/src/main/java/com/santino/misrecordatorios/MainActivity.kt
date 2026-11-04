@@ -36,8 +36,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.santino.misrecordatorios.ui.theme.MisRecordatoriosTheme
-
+import androidx.activity.viewModels
+import com.santino.misrecordatorios.data.RepositorioRecordatoriosEnMemoria
+import com.santino.misrecordatorios.ui.viewmodel.RecordatoriosViewModel
+import com.santino.misrecordatorios.ui.viewmodel.RecordatoriosViewModelFactory
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.santino.misrecordatorios.ui.state.ListadoUiState
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.OutlinedButton
+import com.santino.misrecordatorios.ui.navigation.NavegacionRecordatorios
+import androidx.compose.foundation.clickable
 class MainActivity : ComponentActivity() {
+
+    private val recordatoriosViewModel: RecordatoriosViewModel by viewModels {
+        RecordatoriosViewModelFactory(
+            RepositorioRecordatoriosEnMemoria()
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,14 +62,20 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MisRecordatoriosTheme {
-                PantallaRecordatorios()
+                NavegacionRecordatorios(
+                    viewModel = recordatoriosViewModel
+                )
             }
         }
     }
 }
 
 @Composable
-fun PantallaRecordatorios() {
+fun PantallaRecordatorios(
+    viewModel: RecordatoriosViewModel,
+    onNuevo: () -> Unit = {},
+    onDetalle: (Int) -> Unit = {}
+) {
 
     // Estado de los filtros
     var filtroEstado by remember {
@@ -63,11 +86,20 @@ fun PantallaRecordatorios() {
         mutableStateOf<Prioridad?>(null)
     }
 
-    // Obtener recordatorios filtrados
-    val recordatoriosVisibles = DatosRecordatorios.filtrar(
-        estado = filtroEstado,
-        prioridad = filtroPrioridad
-    )
+    // Observar los cambios del ViewModel
+    val listadoUiState by viewModel.listadoUiState.collectAsStateWithLifecycle()
+
+    // Obtener los recordatorios del estado actual
+    val recordatorios = when (val estado = listadoUiState) {
+        is ListadoUiState.ConDatos -> estado.recordatorios
+        else -> emptyList()
+    }
+
+    // Aplicar los filtros
+    val recordatoriosVisibles = recordatorios.filter { recordatorio ->
+        (filtroEstado == null || recordatorio.estado == filtroEstado) &&
+                (filtroPrioridad == null || recordatorio.prioridad == filtroPrioridad)
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize()
@@ -96,6 +128,14 @@ fun PantallaRecordatorios() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onNuevo
+            ) {
+                Text("Nuevo recordatorio")
+            }
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -186,26 +226,131 @@ fun PantallaRecordatorios() {
             // Contador
             Text(
                 text = "${recordatoriosVisibles.size} de " +
-                        "${DatosRecordatorios.recordatorios.size} recordatorios",
+                        "${recordatorios.size} recordatorios",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Lista de recordatorios
+            // Controles temporales para probar los estados
+            Text(
+                text = "Pruebas de funcionamiento",
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+
+                OutlinedButton(
+                    onClick = { viewModel.restaurarListado() }
+                ) {
+                    Text("Normal")
+                }
+
+                OutlinedButton(
+                    onClick = { viewModel.simularVacio() }
+                ) {
+                    Text("Vacío")
+                }
+
+                OutlinedButton(
+                    onClick = { viewModel.simularError() }
+                ) {
+                    Text("Error")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Lista de recordatorios y estados de la pantalla
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 20.dp)
             ) {
 
-                items(
-                    items = recordatoriosVisibles,
-                    key = { it.id }
-                ) { recordatorio ->
+                when (val estado = listadoUiState) {
 
-                    TarjetaRecordatorio(recordatorio)
+                    // Estado de carga
+                    ListadoUiState.Cargando -> {
+                        item {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator()
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Text("Cargando recordatorios...")
+                            }
+                        }
+                    }
+
+                    // Estado vacío
+                    ListadoUiState.Vacio -> {
+                        item {
+                            Text(
+                                text = "Todavía no hay recordatorios.",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+
+                    // Estado de error
+                    is ListadoUiState.Error -> {
+                        item {
+                            Column {
+                                Text(
+                                    text = estado.mensaje,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Button(
+                                    onClick = {
+                                        viewModel.reintentar()
+                                    }
+                                ) {
+                                    Text("Reintentar")
+                                }
+                            }
+                        }
+                    }
+
+                    // Estado con datos
+                    is ListadoUiState.ConDatos -> {
+
+                        if (recordatoriosVisibles.isEmpty()) {
+
+                            item {
+                                Text(
+                                    text = "No hay recordatorios que coincidan con los filtros."
+                                )
+                            }
+
+                        } else {
+
+                            items(
+                                items = recordatoriosVisibles,
+                                key = { it.id }
+                            ) { recordatorio ->
+
+                                TarjetaRecordatorio(
+                                    recordatorio = recordatorio,
+                                    onClick = {
+                                        onDetalle(recordatorio.id)
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -214,7 +359,9 @@ fun PantallaRecordatorios() {
 
 // Tarjeta individual de recordatorio
 @Composable
-fun TarjetaRecordatorio(recordatorio: Recordatorio) {
+fun TarjetaRecordatorio(recordatorio: Recordatorio,
+    onClick: () -> Unit = {}
+) {
 
     val colorCategoria =
         DatosRecordatorios.coloresPorCategoria[recordatorio.categoria]
@@ -232,7 +379,9 @@ fun TarjetaRecordatorio(recordatorio: Recordatorio) {
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
@@ -313,7 +462,16 @@ fun Etiqueta(
 @Composable
 fun PantallaRecordatoriosPreview() {
 
+    val previewViewModel = remember {
+        RecordatoriosViewModel(
+            RepositorioRecordatoriosEnMemoria()
+        )
+    }
+
     MisRecordatoriosTheme {
-        PantallaRecordatorios()
+        PantallaRecordatorios(
+            viewModel = previewViewModel
+        )
     }
 }
+
